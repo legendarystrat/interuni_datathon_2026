@@ -1,0 +1,176 @@
+{
+  "per_model_metrics": [
+    {
+      "label": "feature_eng_joint_xgboost_trial_saved_feature_eng_joint_best",
+      "model": "xgboost",
+      "weight": 0.0352595742461739,
+      "oof_log_loss": 0.42353657437354314,
+      "oof_auc": 0.7891285089418911,
+      "reported_val_log_loss_mean": 0.4232287030876286,
+      "reported_val_roc_auc_mean": 0.7895951433786396
+    },
+    {
+      "label": "optuna_extended_xgboost_trial_16_all_engineered_extended",
+      "model": "xgboost",
+      "weight": 0.010378760209568951,
+      "oof_log_loss": 0.424336593528755,
+      "oof_auc": 0.7879348489550881,
+      "reported_val_log_loss_mean": 0.4240624150012035,
+      "reported_val_roc_auc_mean": 0.7882855259434259
+    },
+    {
+      "label": "optuna_extended_lightgbm_trial_46_custom_blocks_demographics_delay",
+      "model": "lightgbm",
+      "weight": 0.00016749662781776606,
+      "oof_log_loss": 0.4244467421893199,
+      "oof_auc": 0.7877326480576001,
+      "reported_val_log_loss_mean": 0.42444674218931977,
+      "reported_val_roc_auc_mean": 0.7880482433402589
+    },
+    {
+      "label": "optuna_extended_catboost_trial_28_all_engineered_extended",
+      "model": "catboost",
+      "weight": 0.13033925272986782,
+      "oof_log_loss": 0.42374209567216653,
+      "oof_auc": 0.7885736040542125,
+      "reported_val_log_loss_mean": 0.42379126459584293,
+      "reported_val_roc_auc_mean": 0.7885749434052336
+    },
+    {
+      "label": "optuna_original_xgboost_trial_25_all_engineered",
+      "model": "xgboost",
+      "weight": 8.627769868189684e-05,
+      "oof_log_loss": 0.4247568811765381,
+      "oof_auc": 0.7869583802136517,
+      "reported_val_log_loss_mean": 0.42466012224796523,
+      "reported_val_roc_auc_mean": 0.7873174996069932
+    },
+    {
+      "label": "optuna_original_lightgbm_trial_12_all_engineered",
+      "model": "lightgbm",
+      "weight": 0.04284946751536967,
+      "oof_log_loss": 0.42480258447456604,
+      "oof_auc": 0.7866956989310918,
+      "reported_val_log_loss_mean": 0.42480258447456604,
+      "reported_val_roc_auc_mean": 0.7869756074951274
+    },
+    {
+      "label": "optuna_original_catboost_trial_17_all_engineered",
+      "model": "catboost",
+      "weight": 0.19376328300211723,
+      "oof_log_loss": 0.42415966121190257,
+      "oof_auc": 0.7877189879456339,
+      "reported_val_log_loss_mean": 0.42419773559449026,
+      "reported_val_roc_auc_mean": 0.7878701045288706
+    },
+    {
+      "label": "global_search_xgboost_trial_41_exported_feature_eng_best",
+      "model": "xgboost",
+      "weight": 0.18655244543092475,
+      "oof_log_loss": 0.42382416791532085,
+      "oof_auc": 0.7886042196352919,
+      "reported_val_log_loss_mean": 0.4235613107681274,
+      "reported_val_roc_auc_mean": 0.7890468117815338
+    },
+    {
+      "label": "global_search_xgboost_trial_45_exported_feature_eng_best",
+      "model": "xgboost",
+      "weight": 0.003199804325548516,
+      "oof_log_loss": 0.4237146020728977,
+      "oof_auc": 0.788747492089606,
+      "reported_val_log_loss_mean": 0.4235685169696808,
+      "reported_val_roc_auc_mean": 0.7892417671189582
+    },
+    {
+      "label": "global_search_xgboost_trial_42_exported_feature_eng_best",
+      "model": "xgboost",
+      "weight": 0.1880814633772842,
+      "oof_log_loss": 0.42370430437148315,
+      "oof_auc": 0.7886979760732684,
+      "reported_val_log_loss_mean": 0.423614090681076,
+      "reported_val_roc_auc_mean": 0.7890256785836565
+    },
+    {
+      "label": "global_search_xgboost_trial_43_exported_feature_eng_best",
+      "model": "xgboost",
+      "weight": 0.04119271597019851,
+      "oof_log_loss": 0.42377472656006193,
+      "oof_auc": 0.7887419796726046,
+      "reported_val_log_loss_mean": 0.42361838221549986,
+      "reported_val_roc_auc_mean": 0.7891382607867458
+    },
+    {
+      "label": "global_search_xgboost_trial_47_exported_feature_eng_best",
+      "model": "xgboost",
+      "weight": 0.017417399967773604,
+      "oof_log_loss": 0.4237150014852345,
+      "oof_auc": 0.7888689869696237,
+      "reported_val_log_loss_mean": 0.4236480534076691,
+      "reported_val_roc_auc_mean": 0.7889720140492191
+    },
+    {
+      "label": "global_search_lightgbm_trial_31_all_features",
+      "model": "lightgbm",
+      "weight": 0.0025573245694598293,
+      "oof_log_loss": 0.4237767525125241,
+      "oof_auc": 0.788560830766188,
+      "reported_val_log_loss_mean": 0.4237767525125241,
+      "reported_val_roc_auc_mean": 0.7887657994697583
+    },
+    {
+      "label": "global_search_lightgbm_trial_41_all_features",
+      "model": "lightgbm",
+      "weight": 0.07764532823490224,
+      "oof_log_loss": 0.42378155288422914,
+      "oof_auc": 0.7885882164941614,
+      "reported_val_log_loss_mean": 0.4237815528842292,
+      "reported_val_roc_auc_mean": 0.788833423317618
+    },
+    {
+      "label": "global_search_lightgbm_trial_44_all_features",
+      "model": "lightgbm",
+      "weight": 0.03970748315905245,
+      "oof_log_loss": 0.4238078735483933,
+      "oof_auc": 0.7883968036083737,
+      "reported_val_log_loss_mean": 0.42380787354839333,
+      "reported_val_roc_auc_mean": 0.7886637302274953
+    },
+    {
+      "label": "global_search_lightgbm_trial_37_all_features",
+      "model": "lightgbm",
+      "weight": 0.023434975841287124,
+      "oof_log_loss": 0.42387309859454,
+      "oof_auc": 0.7882310481516276,
+      "reported_val_log_loss_mean": 0.4238730985945399,
+      "reported_val_roc_auc_mean": 0.7885007847032723
+    },
+    {
+      "label": "global_search_lightgbm_trial_42_all_features",
+      "model": "lightgbm",
+      "weight": 0.007366947093971701,
+      "oof_log_loss": 0.4238778694242538,
+      "oof_auc": 0.7884214885543428,
+      "reported_val_log_loss_mean": 0.4238778694242539,
+      "reported_val_roc_auc_mean": 0.7886494572319536
+    }
+  ],
+  "reproduced_blend_oof_log_loss": 0.4229397278174045,
+  "reproduced_blend_oof_auc": 0.7897284151058406,
+  "reported_blend_val_log_loss_mean": 0.42286059146172406,
+  "reported_blend_val_roc_auc_mean": 0.7900760428929055,
+  "reproduction_check_max_abs_diff": 0.019333418657879575,
+  "reproduction_check_mean_abs_diff": 0.0018913793138438375,
+  "train_prior_default_rate": 0.22120833333333334,
+  "test_pred_stats": {
+    "mean": 0.21882918623466502,
+    "min": 0.02777169523501634,
+    "max": 0.8516373992987534,
+    "std": 0.19499449556711343
+  },
+  "oof_pred_stats": {
+    "mean": 0.22050144367485866,
+    "min": 0.02367692551259808,
+    "max": 0.8805200127854312,
+    "std": 0.19627432147379392
+  }
+}

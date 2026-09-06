@@ -1,0 +1,56 @@
+# Error Analysis: submission_global_targeted_blend.csv
+
+This analysis reproduces the exact 5-fold CV / blend pipeline behind `global_search_targeted_best.json` (the config that produced `submission_global_targeted_blend.csv`), regenerates out-of-fold (OOF) predictions for all 17 blended base models plus the raw blend, and looks at where the resulting log loss actually comes from. The reproduced blended OOF log loss (0.42294) matched the repo's own reported CV score (0.42286) closely, and the reproduced test-set blend matched the submitted file to within a mean absolute difference of 0.0019 (small numeric drift from library-version nondeterminism, not a logic error), so the numbers below can be trusted as representative of the real model.
+
+## 1. The loss is extremely concentrated in a small number of catastrophic misses
+
+Mean row-level log loss is 0.4229, but the *median* row loss is only 0.175 — most predictions are fine, and a thin tail of badly-wrong predictions is dragging the average up. Concretely:
+
+- The worst 1% of rows (240 clients) account for **6.7%** of total log loss.
+- The worst 5% of rows account for **27.0%** of total log loss.
+- The worst 10% of rows account for **45.7%** of total log loss.
+
+The single most damaging category is clients the model rated as very safe (predicted default probability under 10%) who defaulted anyway: **490 clients (2.0% of the training set, but 9.2% of all defaulters)** fall in this bucket, and they alone account for **12.7% of total log loss**. If those 490 rows were predicted perfectly, mean log loss would fall from 0.4229 to 0.3692 — a swing (~0.054) roughly 30x larger than every gain recorded in `EXPERIMENT_LOG.md` combined (the whole Optuna/blending campaign moved the score from ~0.4235 to ~0.4229, about 0.0006). The mirror-image error (predicted >70% risk, actually repaid) is much cheaper: 272 clients, only 3.8% of total loss, because log loss penalizes confident-wrong-low predictions far more asymmetrically than confident-wrong-high ones at this base rate.
+
+Looking at the worst 15 individual rows, every single one is a defaulter the model rated 2-4% risk. Their profiles are strikingly "clean": `PAY_0`/`PAY_2`/`PAY_3` mostly 0 or negative (paid on time or no balance), `num_severe_delays = 0` in nearly all of them, and unremarkable credit utilization. This is the real weakness in the model: **every engineered feature in this pipeline is derived from repayment/delay/bill history, so a client with a spotless recent payment record has no feature that can signal an impending first-time default** (job loss, medical emergency, a single large unbudgeted expense, etc.). No amount of further hyperparameter tuning on trees built from these same columns can fix this — it's a feature-availability ceiling, not a modeling-technique problem.
+
+## 2. Calibration is actually good in aggregate — the tail problem is a discrimination problem, not a calibration problem
+
+Bucketing predictions into deciles, predicted vs. actual default rate track closely all the way up the range (gaps mostly within ±1 percentage point, e.g. top decile: mean predicted 69.9% vs actual 70.7%). This is consistent with the calibrated-blend search in the repo finding *no* improvement from adding a logit-scale/intercept/prior-shrinkage layer (calibrated blend log loss 0.422939 vs. raw blend 0.422861 — calibration made things marginally worse). So there's no quick win available from recalibrating the existing probabilities; the problem is that the model can't tell the 490 "clean-history defaulters" apart from the 17,000+ genuinely clean-and-safe clients using the features it has, not that its probability scale is off.
+
+## 3. `PAY_0`/delay history dominates; credit utilization is a surprisingly weak, non-monotonic signal
+
+Grouping by `PAY_0` shows an enormous, well-tracked spread: default rate is ~13% when `PAY_0 <= 0` (paid/no balance), jumps to 34% at `PAY_0 = 1`, and 60-75% once `PAY_0 >= 2`. `num_severe_delays` shows the same clean gradient (12.8% → 77.4% base rate from 0 to 6 severe delays), and the model tracks both well.
+
+Credit utilization, by contrast, is nearly flat and non-monotonic: bucketed into deciles, the *lowest* utilization decile (near-zero/negative utilization) has a base default rate of 24.1% — about the same as the *highest* utilization decile (over-limit, 29.0%) — with the lowest default rates actually sitting in the low-middle deciles (14-17%). The two extreme utilization deciles also carry the highest per-bucket log loss (0.52 and 0.53) despite being well-calibrated in the mean, i.e. these are inherently high-entropy segments where utilization alone doesn't discriminate. Given that a meaningful share of the feature-engineering effort in this repo went into utilization blocks (`util_stats`, `credit_util`, `delay_util_interactions` — the latter was explicitly dropped from the winning 54-feature set per `EXPERIMENT_LOG.md`), this suggests utilization-based feature engineering has limited further headroom; delay/repayment-status features are the real workhorse and are more likely to reward additional engineering.
+
+`LIMIT_BAL` is a genuinely strong, well-modeled signal: default rate falls monotonically from 36% in the lowest credit-limit decile to 12% in the highest, and the model's predictions track that slope closely.
+
+## 4. The blend's measured improvement is smaller than the fold-to-fold noise, and it was selected against the same fixed CV split it's scored on
+
+Individual base models range from 0.4235 to 0.4248 OOF log loss with per-fold standard deviations around 0.0064-0.0068 (i.e. standard error of the 5-fold mean ≈ 0.0029). The raw blend's reported gain over the single best base model is only ~0.0008-0.0011 — smaller than one standard error. That blend was picked as the best of 1,328 randomly-searched weight vectors evaluated on the *same* `StratifiedKFold(5, seed=42)` split that also produced every individual model's reported score and every calibration parameter. Nothing in the pipeline re-validates the winning blend weights on an independent split (a repeated/nested CV, or a second seed) before calling it the best result. Given the gain is inside the noise band, there's a real chance the reported 0.4229 slightly overstates what this blend will score on the actual held-out test set, and that a simpler single model or a smaller blend would generalize just as well.
+
+Relatedly, the 17 blended models have limited real diversity: it's 3 tree-boosting families (mostly XGBoost — 8 of the 17 configs, plus 6 LightGBM, 2 CatBoost), several of which are near-duplicate hyperparameter variants on the same feature set (5 XGBoost configs all on the "exported_feature_eng_best" 54-feature set; 5 LightGBM configs all on "all_features" 82-feature set). Blending highly correlated models yields limited variance reduction, which is consistent with the small measured gain above. A model of a genuinely different shape (regularized logistic regression, or something non-tree-based) added to the blend — even if individually weaker — would likely buy more real ensemble diversity than another round of XGBoost/LightGBM Optuna trials.
+
+## 5. Minor data-quality notes
+
+`EDUCATION` and `MARRIAGE` both carry small, sparsely-populated categories that don't match the documented coding (`EDUCATION` values 0, 4, 5, 6; `MARRIAGE` value 0) — together under 2% of rows. They're too small to move the aggregate score, but they do show elevated log loss per bucket (e.g. `EDUCATION=6`: n=43, log loss 0.49; `MARRIAGE=3`: n=254, log loss 0.48), consistent with the model having little reliable signal for these rare codes. Collapsing them into a single "other" bucket is unlikely to help discrimination much but would remove some category-level noise from the trees' split search.
+
+## 6. Follow-up: the blend's edge holds up under a repeated-CV check
+
+Re-ran OOF predictions for all 17 base models under two additional, independent `StratifiedKFold(5, shuffle=True, ...)` splits (seeds 7 and 123, in addition to the original seed 42), then compared the saved blend weights against (a) a naive equal-weight blend of the same 17 models and (b) whichever single model scored best on that particular split:
+
+| seed | saved-weight blend | equal-weight blend | best single model | blend vs. best single | blend vs. equal |
+|---|---|---|---|---|---|
+| 42  | 0.422940 | 0.423141 | 0.423537 | +0.000597 | +0.000202 |
+| 7   | 0.422979 | 0.423078 | 0.423432 | +0.000453 | +0.000099 |
+| 123 | 0.423060 | 0.423205 | 0.423416 | +0.000356 | +0.000145 |
+
+The saved-weight blend beat both the equal-weight blend and the best single model on all 3/3 independent fold assignments — and notably, *which* model was "best single" changed every time (feature_eng_joint xgboost, then global_search_xgboost_trial_45, then trial_43), reinforcing point 4 above that individual model rankings are within noise. So the blending benefit itself is real and not an artifact of overfitting to the seed=42 split used for the weight search. The one caveat: the blend's margin over the best single model does shrink somewhat moving away from seed 42 (0.0006 → 0.0005 → 0.0004), consistent with the weights being *tuned* on that split — some, but not all, of the seed-42 "win" is genuine seed-specific overfit. Net takeaway: **trust that blending beats any single model here, but don't expect further blend-weight micro-optimization on a single fixed split to produce reliable additional gains** — feature engineering (delay/repayment trends) over more weight search is still the better use of remaining time.
+
+## Summary of where to spend effort next
+
+The experiment log shows a large amount of compute already spent on Optuna hyperparameter search and blend-weight search for a combined ~0.0006 gain, which is smaller than the CV noise floor computed above, though the repeated-CV check in section 6 confirms the blend itself is a genuine (if modest) improvement over any single model, not just noise — so `submission_global_targeted_blend.csv` is a reasonable one to trust and submit. The highest-leverage opportunities for further work are structural rather than tuning-related: (1) accept that a small, high-loss segment of "clean-history" defaulters is likely irreducible with the current feature set and consider whether any weak residual signal exists there (e.g. trends in bill/payment volatility even without late payment, income-proxy features) rather than chasing it with more tree tuning; (2) prioritize further feature engineering on delay/repayment-status interactions over utilization, since utilization shows a weak/non-monotonic relationship with default in this data; and (3) add a structurally different model to the blend for real diversity rather than more same-family variants.
+
+---
+*Analysis artifacts saved alongside this file in the repo: `error_analysis.py` (initial OOF reproduction), `error_segments.py` (segment/error breakdown), `cv_robustness.py` (repeated-CV robustness check), `error_analysis_oof.csv` (per-row predictions + log loss), `error_analysis_test_preds.csv`, `error_analysis_summary.json`, `cv_robustness_results.json`.*
