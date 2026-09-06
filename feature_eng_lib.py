@@ -26,7 +26,7 @@ from model_copy_utils import (
 
 OPTUNA_STORAGE = "sqlite:///optuna_feature_eng_joint.db"
 OPTUNA_BEST_PATH = "feature_eng_joint_best.json"
-OPTUNA_N_TRIALS = 50
+OPTUNA_N_TRIALS = 200
 
 PAY_COLS = ["PAY_0", "PAY_2", "PAY_3", "PAY_4", "PAY_5", "PAY_6"]
 PAY_AMT_COLS = [f"PAY_AMT{i}" for i in range(1, 7)]
