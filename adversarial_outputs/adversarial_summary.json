@@ -1,0 +1,105 @@
+{
+  "fold_aucs": [
+    0.5087399305555556,
+    0.5042938368055556,
+    0.5076258680555555,
+    0.5167723958333333,
+    0.5000636284722222
+  ],
+  "shift_auc_mean": 0.5074991319444444,
+  "shift_auc_std": 0.005533709338246439,
+  "material_threshold": 0.55,
+  "material_shift": false,
+  "n_train": 24000,
+  "n_test": 6000,
+  "n_features": 82,
+  "train_oof_test_prob_mean": 0.19904798003534477,
+  "test_oof_test_prob_mean": 0.20018419455736874,
+  "weight_clip_low": 0.25,
+  "weight_clip_high": 4.0,
+  "weight_mean_after_normalization": 1.0,
+  "weight_min": 0.24799818311893163,
+  "weight_max": 3.967970929902906,
+  "top_shift_features": [
+    {
+      "feature": "months_high_util",
+      "importance": 0.015858283266425133
+    },
+    {
+      "feature": "PAY_4",
+      "importance": 0.015012510120868683
+    },
+    {
+      "feature": "num_low_pay_ratio",
+      "importance": 0.014915981329977512
+    },
+    {
+      "feature": "total_bill",
+      "importance": 0.014739442616701126
+    },
+    {
+      "feature": "weighted_delay_v2",
+      "importance": 0.014717897400259972
+    },
+    {
+      "feature": "BILL_AMT5",
+      "importance": 0.014269441366195679
+    },
+    {
+      "feature": "PAY_AMT2",
+      "importance": 0.014182887971401215
+    },
+    {
+      "feature": "severe_delay_x_util",
+      "importance": 0.014003732241690159
+    },
+    {
+      "feature": "credit_util_5",
+      "importance": 0.01390590239316225
+    },
+    {
+      "feature": "max_pay_amt",
+      "importance": 0.013770944438874722
+    },
+    {
+      "feature": "num_zero_payments",
+      "importance": 0.013734506443142891
+    },
+    {
+      "feature": "bill_pct_change_4_5",
+      "importance": 0.013696335256099701
+    },
+    {
+      "feature": "bill_pct_change_2_3",
+      "importance": 0.013651608489453793
+    },
+    {
+      "feature": "std_pay_amt",
+      "importance": 0.013634998351335526
+    },
+    {
+      "feature": "recent_delay_avg",
+      "importance": 0.01353492122143507
+    },
+    {
+      "feature": "BILL_AMT6",
+      "importance": 0.01351915579289198
+    },
+    {
+      "feature": "credit_util_4",
+      "importance": 0.013510920107364655
+    },
+    {
+      "feature": "old_pay_mean",
+      "importance": 0.013494264334440231
+    },
+    {
+      "feature": "pay_bill_ratio_5",
+      "importance": 0.013416285626590252
+    },
+    {
+      "feature": "recent_pay_mean",
+      "importance": 0.013393927365541458
+    }
+  ]
+}
