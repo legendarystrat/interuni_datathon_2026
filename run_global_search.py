@@ -15,8 +15,11 @@ import xgboost as xgb
 import lightgbm as lgb
 from catboost import CatBoostClassifier
 from sklearn.base import clone
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss, roc_auc_score
 from sklearn.model_selection import StratifiedKFold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 from feature_eng_lib import ALL_ABLATION_BLOCKS, build_feature_cols_from_blocks
 from feature_eng_lib import engineer_all_features
@@ -38,6 +41,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--submission", type=Path, default=Path("submission_global_blend.csv"))
     parser.add_argument("--trials-per-model", type=int, default=150)
     parser.add_argument("--blend-trials", type=int, default=500)
+    parser.add_argument("--calibration-trials", type=int, default=500)
+    parser.add_argument("--stack-trials", type=int, default=100)
     parser.add_argument("--top-k-per-model", type=int, default=3)
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--seed", type=int, default=RANDOM_STATE)
@@ -46,6 +51,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sample-weights", type=Path)
     parser.add_argument("--no-existing-configs", action="store_true")
     parser.add_argument("--skip-model-search", action="store_true")
+    parser.add_argument("--disable-calibration", action="store_true")
+    parser.add_argument("--disable-stack", action="store_true")
     parser.add_argument("--make-submission", action="store_true")
     parser.add_argument("--show-progress", action="store_true")
     return parser.parse_args()
@@ -416,6 +423,71 @@ def make_oof_predictions(
     return oof
 
 
+def clip_probabilities(probs: np.ndarray, eps: float = 1e-6) -> np.ndarray:
+    return np.clip(np.asarray(probs, dtype=float), eps, 1.0 - eps)
+
+
+def sigmoid(values: np.ndarray) -> np.ndarray:
+    return 1.0 / (1.0 + np.exp(-np.clip(values, -50.0, 50.0)))
+
+
+def logit_probabilities(probs: np.ndarray) -> np.ndarray:
+    clipped = clip_probabilities(probs)
+    return np.log(clipped / (1.0 - clipped))
+
+
+def score_oof_predictions(
+    probs: np.ndarray,
+    y: pd.Series,
+    folds: int,
+    seed: int,
+) -> tuple[float, float]:
+    y_values = y.to_numpy()
+    clipped = clip_probabilities(probs)
+    cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed)
+    fold_losses = [
+        log_loss(y_values[val_idx], clipped[val_idx])
+        for _, val_idx in cv.split(clipped, y_values)
+    ]
+    fold_aucs = [
+        roc_auc_score(y_values[val_idx], clipped[val_idx])
+        for _, val_idx in cv.split(clipped, y_values)
+    ]
+    return float(np.mean(fold_losses)), float(np.mean(fold_aucs))
+
+
+def log_loss_oof_predictions(probs: np.ndarray, y: pd.Series) -> float:
+    return float(log_loss(y.to_numpy(), clip_probabilities(probs)))
+
+
+def blend_predictions(
+    base_predictions: dict[str, np.ndarray],
+    weights: dict[str, float],
+) -> np.ndarray:
+    first = next(iter(base_predictions.values()))
+    blended = np.zeros(len(first), dtype=float)
+    for label, weight in weights.items():
+        if weight <= 0:
+            continue
+        blended += weight * base_predictions[label]
+    return clip_probabilities(blended)
+
+
+def apply_logit_calibration(
+    probs: np.ndarray,
+    calibration: dict,
+    base_prior: float,
+) -> np.ndarray:
+    calibrated = sigmoid(
+        calibration["logit_scale"] * logit_probabilities(probs)
+        + calibration["logit_intercept"]
+    )
+    prior_weight = float(calibration.get("prior_weight", 0.0))
+    if prior_weight > 0:
+        calibrated = (1.0 - prior_weight) * calibrated + prior_weight * base_prior
+    return clip_probabilities(calibrated)
+
+
 def optimize_blend(
     base_oof: dict[str, np.ndarray],
     y: pd.Series,
@@ -425,22 +497,10 @@ def optimize_blend(
     show_progress: bool,
 ) -> dict:
     labels = list(base_oof)
-    y_values = y.to_numpy()
-    cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed)
 
     def score_blend(weights: dict[str, float]) -> tuple[float, float]:
-        blended = np.zeros(len(y_values), dtype=float)
-        for label, weight in weights.items():
-            blended += weight * base_oof[label]
-        fold_losses = [
-            log_loss(y_values[val_idx], blended[val_idx])
-            for _, val_idx in cv.split(blended, y_values)
-        ]
-        fold_aucs = [
-            roc_auc_score(y_values[val_idx], blended[val_idx])
-            for _, val_idx in cv.split(blended, y_values)
-        ]
-        return float(np.mean(fold_losses)), float(np.mean(fold_aucs))
+        blended = blend_predictions(base_oof, weights)
+        return score_oof_predictions(blended, y, folds, seed)
 
     def objective(trial: optuna.Trial) -> float:
         raw_weights = np.array(
@@ -450,9 +510,8 @@ def optimize_blend(
             raise optuna.TrialPruned("All blend weights are zero")
         weights_arr = raw_weights / raw_weights.sum()
         weights = {label: float(weight) for label, weight in zip(labels, weights_arr)}
-        loss, auc = score_blend(weights)
+        loss = log_loss_oof_predictions(blend_predictions(base_oof, weights), y)
         trial.set_user_attr("weights", weights)
-        trial.set_user_attr("val_roc_auc_mean", auc)
         return loss
 
     study = optuna.create_study(
@@ -469,6 +528,167 @@ def optimize_blend(
         "val_roc_auc_mean": best_auc,
         "weights": best_weights,
     }
+
+
+def optimize_calibrated_blend(
+    base_oof: dict[str, np.ndarray],
+    y: pd.Series,
+    folds: int,
+    seed: int,
+    n_trials: int,
+    show_progress: bool,
+) -> dict:
+    labels = list(base_oof)
+    base_prior = float(y.mean())
+
+    def objective(trial: optuna.Trial) -> float:
+        raw_weights = np.array(
+            [trial.suggest_float(f"w_{idx}", 0.0, 1.0) for idx in range(len(labels))]
+        )
+        if np.all(raw_weights == 0):
+            raise optuna.TrialPruned("All blend weights are zero")
+        weights_arr = raw_weights / raw_weights.sum()
+        weights = {label: float(weight) for label, weight in zip(labels, weights_arr)}
+        calibration = {
+            "logit_scale": trial.suggest_float("logit_scale", 0.45, 1.75),
+            "logit_intercept": trial.suggest_float("logit_intercept", -0.8, 0.8),
+            "prior_weight": trial.suggest_float("prior_weight", 0.0, 0.15),
+        }
+        blended = blend_predictions(base_oof, weights)
+        calibrated = apply_logit_calibration(blended, calibration, base_prior)
+        loss = log_loss_oof_predictions(calibrated, y)
+        trial.set_user_attr("weights", weights)
+        trial.set_user_attr("calibration", calibration)
+        return loss
+
+    study = optuna.create_study(
+        study_name="global_top_trial_calibrated_blend",
+        direction="minimize",
+        sampler=optuna.samplers.TPESampler(seed=seed + 2000),
+    )
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=show_progress)
+    best_weights = study.best_trial.user_attrs["weights"]
+    best_calibration = study.best_trial.user_attrs["calibration"]
+    best_predictions = apply_logit_calibration(
+        blend_predictions(base_oof, best_weights),
+        best_calibration,
+        base_prior,
+    )
+    best_loss, best_auc = score_oof_predictions(best_predictions, y, folds, seed)
+    return {
+        "trial_number": int(study.best_trial.number),
+        "val_log_loss_mean": best_loss,
+        "val_roc_auc_mean": best_auc,
+        "weights": best_weights,
+        "calibration": best_calibration,
+        "base_prior": base_prior,
+    }
+
+
+def stack_feature_matrix(
+    base_predictions: dict[str, np.ndarray],
+    labels: list[str],
+    input_mode: str,
+) -> np.ndarray:
+    probs = np.column_stack([clip_probabilities(base_predictions[label]) for label in labels])
+    if input_mode == "probability":
+        return probs
+
+    logits = np.column_stack(
+        [logit_probabilities(base_predictions[label]) for label in labels]
+    )
+    if input_mode == "logit":
+        return logits
+    if input_mode == "both":
+        return np.column_stack([probs, logits])
+    raise ValueError(f"Unknown stack input mode: {input_mode}")
+
+
+def make_logistic_stack_model(params: dict, seed: int):
+    return make_pipeline(
+        StandardScaler(),
+        LogisticRegression(
+            C=float(params["C"]),
+            max_iter=2000,
+            random_state=seed,
+            solver="lbfgs",
+        ),
+    )
+
+
+def optimize_logistic_stack(
+    base_oof: dict[str, np.ndarray],
+    y: pd.Series,
+    folds: int,
+    seed: int,
+    n_trials: int,
+    show_progress: bool,
+) -> dict:
+    labels = list(base_oof)
+    y_values = y.to_numpy()
+    cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed + 3000)
+
+    def score_stack(params: dict, input_mode: str, include_auc: bool) -> tuple[float, float | None]:
+        X_meta = stack_feature_matrix(base_oof, labels, input_mode)
+        meta_oof = np.zeros(len(y_values), dtype=float)
+        fold_losses: list[float] = []
+        fold_aucs: list[float] = []
+
+        for train_idx, val_idx in cv.split(X_meta, y_values):
+            model = make_logistic_stack_model(params, seed)
+            model.fit(X_meta[train_idx], y_values[train_idx])
+            fold_probs = model.predict_proba(X_meta[val_idx])[:, 1]
+            meta_oof[val_idx] = fold_probs
+            fold_losses.append(log_loss(y_values[val_idx], clip_probabilities(fold_probs)))
+            if include_auc:
+                fold_aucs.append(roc_auc_score(y_values[val_idx], fold_probs))
+
+        auc = float(np.mean(fold_aucs)) if fold_aucs else None
+        return float(np.mean(fold_losses)), auc
+
+    def objective(trial: optuna.Trial) -> float:
+        params = {"C": trial.suggest_float("C", 0.01, 100.0, log=True)}
+        input_mode = trial.suggest_categorical("input_mode", ["probability", "logit", "both"])
+        loss, _ = score_stack(params, input_mode, include_auc=False)
+        trial.set_user_attr("params", params)
+        trial.set_user_attr("input_mode", input_mode)
+        return float(loss)
+
+    study = optuna.create_study(
+        study_name="global_top_trial_logistic_stack",
+        direction="minimize",
+        sampler=optuna.samplers.TPESampler(seed=seed + 4000),
+    )
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=show_progress)
+    best_loss, best_auc = score_stack(
+        study.best_trial.user_attrs["params"],
+        study.best_trial.user_attrs["input_mode"],
+        include_auc=True,
+    )
+    return {
+        "trial_number": int(study.best_trial.number),
+        "val_log_loss_mean": float(best_loss),
+        "val_roc_auc_mean": float(best_auc),
+        "labels": labels,
+        "input_mode": study.best_trial.user_attrs["input_mode"],
+        "params": study.best_trial.user_attrs["params"],
+    }
+
+
+def predict_logistic_stack(
+    stack: dict,
+    base_oof: dict[str, np.ndarray],
+    base_test: dict[str, np.ndarray],
+    y: pd.Series,
+    seed: int,
+) -> np.ndarray:
+    labels = stack["labels"]
+    input_mode = stack["input_mode"]
+    model = make_logistic_stack_model(stack["params"], seed)
+    model.fit(stack_feature_matrix(base_oof, labels, input_mode), y.to_numpy())
+    return clip_probabilities(
+        model.predict_proba(stack_feature_matrix(base_test, labels, input_mode))[:, 1]
+    )
 
 
 def predict_config(
@@ -597,11 +817,46 @@ def main() -> None:
         show_progress=args.show_progress,
     )
 
+    calibrated_blend = None
+    if not args.disable_calibration and args.calibration_trials > 0:
+        calibrated_blend = optimize_calibrated_blend(
+            base_oof,
+            y,
+            folds=args.folds,
+            seed=args.seed,
+            n_trials=args.calibration_trials,
+            show_progress=args.show_progress,
+        )
+
+    logistic_stack = None
+    if not args.disable_stack and args.stack_trials > 0:
+        logistic_stack = optimize_logistic_stack(
+            base_oof,
+            y,
+            folds=args.folds,
+            seed=args.seed,
+            n_trials=args.stack_trials,
+            show_progress=args.show_progress,
+        )
+
+    submission_candidates = {"blend": blend}
+    if calibrated_blend is not None:
+        submission_candidates["calibrated_blend"] = calibrated_blend
+    if logistic_stack is not None:
+        submission_candidates["logistic_stack"] = logistic_stack
+    selected_submission_name, selected_submission = min(
+        submission_candidates.items(),
+        key=lambda item: item[1]["val_log_loss_mean"],
+    )
+
     config_by_label = {config_label(config): config for config in top_configs}
     output_payload = {
         "best_by_model": best_by_model,
         "top_configs": top_configs,
         "blend": blend,
+        "calibrated_blend": calibrated_blend,
+        "logistic_stack": logistic_stack,
+        "selected_submission": selected_submission_name,
         "config_by_blend_label": config_by_label,
         "used_sample_weights": str(args.sample_weights) if args.sample_weights else None,
     }
@@ -613,14 +868,36 @@ def main() -> None:
         f"Best blend log_loss={blend['val_log_loss_mean']:.6f}, "
         f"auc={blend['val_roc_auc_mean']:.6f}"
     )
+    if calibrated_blend is not None:
+        print(
+            "Best calibrated blend "
+            f"log_loss={calibrated_blend['val_log_loss_mean']:.6f}, "
+            f"auc={calibrated_blend['val_roc_auc_mean']:.6f}"
+        )
+    if logistic_stack is not None:
+        print(
+            "Best logistic stack "
+            f"log_loss={logistic_stack['val_log_loss_mean']:.6f}, "
+            f"auc={logistic_stack['val_roc_auc_mean']:.6f}"
+        )
+    print(
+        f"Selected {selected_submission_name} "
+        f"log_loss={selected_submission['val_log_loss_mean']:.6f}"
+    )
     print(f"Saved {args.output}")
 
     if args.make_submission:
-        blended_test = np.zeros(len(test_df), dtype=float)
-        for label, weight in blend["weights"].items():
-            if weight <= 0:
-                continue
-            blended_test += weight * predict_config(
+        if selected_submission_name == "logistic_stack":
+            required_labels = selected_submission["labels"]
+        else:
+            required_labels = [
+                label
+                for label, weight in selected_submission["weights"].items()
+                if weight > 0
+            ]
+
+        base_test = {
+            label: predict_config(
                 config_by_label[label],
                 train_df,
                 test_df,
@@ -628,14 +905,37 @@ def main() -> None:
                 seed=args.seed,
                 sample_weight=sample_weight,
             )
+            for label in required_labels
+        }
+
+        if selected_submission_name == "logistic_stack":
+            final_probs = predict_logistic_stack(
+                selected_submission,
+                base_oof,
+                base_test,
+                y,
+                seed=args.seed,
+            )
+        else:
+            final_probs = blend_predictions(base_test, selected_submission["weights"])
+            if selected_submission_name == "calibrated_blend":
+                final_probs = apply_logit_calibration(
+                    final_probs,
+                    selected_submission["calibration"],
+                    selected_submission["base_prior"],
+                )
+
         submission = pd.DataFrame(
             {
                 ID_COL: test_df[ID_COL],
-                "default_probability": blended_test,
+                "default_probability": final_probs,
             }
         )
         submission.to_csv(args.submission, index=False)
-        print(f"Saved {args.submission} ({len(submission)} rows)")
+        print(
+            f"Saved {args.submission} ({len(submission)} rows, "
+            f"mean prob={final_probs.mean():.6f})"
+        )
 
 
 if __name__ == "__main__":
