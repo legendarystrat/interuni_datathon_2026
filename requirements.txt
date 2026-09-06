@@ -10,3 +10,4 @@ matplotlib
 seaborn
 statsmodels
 jupyter
+torch
