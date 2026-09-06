@@ -9,6 +9,7 @@ import numpy as np
 import optuna
 import pandas as pd
 from sklearn.metrics import log_loss, roc_auc_score
+from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 
 from model_copy_utils import (
@@ -628,6 +629,228 @@ def run_sequential_targeted_block_search(
     )
     comparison_df.insert(0, "rank", comparison_df.index + 1)
     return comparison_df, current_cols, enabled_blocks
+
+
+DELINQUENCY_FEATURE_NAMES = {
+    "num_severe_delays",
+    "num_months_delayed",
+    "ever_delayed",
+    "max_delay",
+    "mean_pay_status",
+    "PAY_0",
+    "PAY_2",
+    "PAY_3",
+    "PAY_4",
+    "PAY_5",
+    "PAY_6",
+    "recent_delay_avg",
+    "older_delay_avg",
+    "delay_deterioration",
+    "weighted_delay",
+    "recent_delay_mean",
+    "old_delay_mean",
+    "delay_deterioration_v2",
+    "weighted_delay_v2",
+}
+
+NON_DELINQUENCY_SIGNAL_GROUPS = {
+    "demographics": ["SEX", "EDUCATION", "MARRIAGE", "AGE"],
+    "limit_balance": ["LIMIT_BAL"],
+    "bill_amounts": [
+        "BILL_AMT1",
+        "BILL_AMT2",
+        "BILL_AMT3",
+        "BILL_AMT4",
+        "BILL_AMT5",
+        "BILL_AMT6",
+        "total_bill",
+    ],
+    "payment_amounts": [
+        "PAY_AMT1",
+        "PAY_AMT2",
+        "PAY_AMT3",
+        "PAY_AMT4",
+        "PAY_AMT5",
+        "PAY_AMT6",
+        "total_pay",
+        "mean_pay_amt",
+        "std_pay_amt",
+        "max_pay_amt",
+    ],
+    "payment_change": ["recent_pay_mean", "old_pay_mean", "payment_change_recent"],
+    "payment_bill_ratios": [
+        *[f"pay_bill_ratio_{i}" for i in range(1, 7)],
+        "mean_pay_bill_ratio",
+        "min_pay_bill_ratio",
+        "num_low_pay_ratio",
+        *[f"pay_bill_ratio_stab_{i}" for i in range(1, 7)],
+        "mean_pay_bill_ratio_stab",
+        "min_pay_bill_ratio_stab",
+        "recent_pay_bill_ratio_stab",
+        "num_low_pay_ratio_stab",
+    ],
+    "utilisation": [
+        "mean_util",
+        "max_util",
+        "std_util",
+        "months_high_util",
+        "months_over_limit",
+        "recent_util_vs_avg",
+        *[f"credit_util_{i}" for i in range(1, 7)],
+    ],
+    "bill_trends": [
+        "bill_slope",
+        *[f"bill_abs_change_{i}_{j}" for i, j in [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (1, 6)]],
+        *[f"bill_pct_change_{i}_{j}" for i, j in BILL_PCT_PAIRS],
+        *[f"bill_pct_change_{i}_{j}_robust" for i, j in BILL_PCT_PAIRS],
+        *[f"bill_pct_change_{i}_{j}_clip" for i, j in BILL_PCT_PAIRS],
+    ],
+    "zero_payment_volatility": [
+        "num_zero_payments",
+        "std_pay_amt",
+        "std_util",
+    ],
+}
+
+
+def low_delinquency_mask(
+    df: pd.DataFrame,
+    pay_0_max: float = 0.0,
+    num_months_delayed_max: int = 0,
+) -> pd.Series:
+    return (df["PAY_0"] <= pay_0_max) & (df["num_months_delayed"] == num_months_delayed_max)
+
+
+def is_delinquency_feature(feature_name: str) -> bool:
+    return feature_name in DELINQUENCY_FEATURE_NAMES
+
+
+def non_delinquency_features(
+    feature_cols: list[str],
+    extra_cols: list[str] | None = None,
+) -> list[str]:
+    candidates = list(dict.fromkeys(list(feature_cols) + (extra_cols or [])))
+    return [c for c in candidates if not is_delinquency_feature(c)]
+
+
+def evaluate_prediction_subset(
+    y_true: pd.Series | np.ndarray,
+    oof_prob: np.ndarray,
+    mask: pd.Series | np.ndarray | None = None,
+) -> dict:
+    y = np.asarray(y_true).astype(int)
+    prob = np.asarray(oof_prob, dtype=float)
+    if mask is not None:
+        mask_arr = np.asarray(mask).astype(bool)
+        y = y[mask_arr]
+        prob = prob[mask_arr]
+
+    if len(y) == 0:
+        raise ValueError("No rows selected for evaluation")
+
+    return {
+        "n_rows": int(len(y)),
+        "default_rate": float(y.mean()),
+        "log_loss": float(log_loss(y, prob)),
+        "roc_auc": float(roc_auc_score(y, prob)) if len(np.unique(y)) > 1 else np.nan,
+    }
+
+
+def compute_subgroup_oof_cv(
+    X: pd.DataFrame,
+    y: pd.Series,
+    xgb_params: dict,
+    n_splits: int = CV_FOLDS,
+    random_state: int = RANDOM_STATE,
+) -> tuple[np.ndarray, list[dict]]:
+    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+    folds = list(cv.split(X, y))
+    return compute_oof_with_folds(X, y, folds, xgb_params)
+
+
+def feature_shift_table(
+    group_a: pd.DataFrame,
+    group_b: pd.DataFrame,
+    feature_cols: list[str],
+    top_n: int | None = None,
+) -> pd.DataFrame:
+    shift = standardized_mean_differences(group_a, group_b, feature_cols)
+    table = (
+        pd.DataFrame(
+            {
+                "feature": shift.index,
+                "std_shift": shift.values,
+            }
+        )
+        .assign(abs_shift=lambda d: d["std_shift"].abs())
+        .sort_values("abs_shift", ascending=False)
+    )
+    if top_n is not None:
+        table = table.head(top_n)
+    return table.reset_index(drop=True)
+
+
+def grouped_feature_shift_summary(
+    group_a: pd.DataFrame,
+    group_b: pd.DataFrame,
+    feature_cols: list[str],
+    group_map: dict[str, list[str]] | None = None,
+) -> pd.DataFrame:
+    group_map = group_map or NON_DELINQUENCY_SIGNAL_GROUPS
+    rows = []
+    for group_name, cols in group_map.items():
+        use_cols = [c for c in cols if c in feature_cols]
+        if not use_cols:
+            continue
+        shift = standardized_mean_differences(group_a, group_b, use_cols)
+        rows.append(
+            {
+                "feature_group": group_name,
+                "n_features": len(use_cols),
+                "mean_abs_shift": float(shift.abs().mean()),
+                "max_abs_shift": float(shift.abs().max()),
+                "top_feature": shift.abs().idxmax(),
+                "top_feature_shift": float(shift.loc[shift.abs().idxmax()]),
+            }
+        )
+    return pd.DataFrame(rows).sort_values("mean_abs_shift", ascending=False)
+
+
+def signal_strength_label(roc_auc: float, weak_upper: float = 0.55) -> str:
+    if np.isnan(roc_auc):
+        return "undefined"
+    if roc_auc <= weak_upper:
+        return "weak_signal / likely irreducible"
+    if roc_auc < 0.65:
+        return "modest_signal"
+    return "material_signal"
+
+
+def subgroup_non_delinquency_feature_cols(df: pd.DataFrame) -> list[str]:
+    """Payments, bills, utilisation, limits, demographics, volatility, ratios/trends."""
+    cols: list[str] = []
+    for group_cols in NON_DELINQUENCY_SIGNAL_GROUPS.values():
+        cols.extend(c for c in group_cols if c in df.columns)
+    return list(dict.fromkeys(cols))
+
+
+def subgroup_feature_importance(
+    X: pd.DataFrame,
+    y: pd.Series,
+    xgb_params: dict,
+    top_n: int | None = 20,
+) -> pd.DataFrame:
+    model = build_tuned_xgb(xgb_params)
+    model.fit(X, y)
+    importance = pd.DataFrame(
+        {
+            "feature": X.columns,
+            "importance": model.feature_importances_,
+        }
+    ).sort_values("importance", ascending=False)
+    if top_n is not None:
+        importance = importance.head(top_n)
+    return importance.reset_index(drop=True)
 
 
 def load_feature_eng_best(path: str | None = None) -> dict:
