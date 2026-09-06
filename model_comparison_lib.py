@@ -27,7 +27,58 @@ from run_global_search import (
     stack_feature_matrix,
 )
 
-DEFAULT_DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def resolve_device(
+    device: str | torch.device | None = None,
+    device_id: int = 0,
+) -> torch.device:
+    """Resolve a PyTorch device for NN training.
+
+    ``device`` may be None / ``\"auto\"`` (CUDA if available), ``\"cpu\"``,
+    ``\"cuda\"``, ``\"cuda:N\"``, or a ``torch.device``.
+    """
+    if isinstance(device, torch.device):
+        return device
+    if device is None or str(device).lower() == "auto":
+        if torch.cuda.is_available():
+            return torch.device(f"cuda:{device_id}")
+        return torch.device("cpu")
+    device_str = str(device).lower()
+    if device_str == "cpu":
+        return torch.device("cpu")
+    if device_str == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA requested but torch.cuda.is_available() is False")
+        return torch.device(f"cuda:{device_id}")
+    if device_str.startswith("cuda:"):
+        if not torch.cuda.is_available():
+            raise RuntimeError(f"CUDA requested ({device_str}) but no GPU is available")
+        return torch.device(device_str)
+    raise ValueError(f"Unknown device: {device!r}")
+
+
+def describe_device(device: torch.device | None = None) -> str:
+    device = device or resolve_device()
+    if device.type == "cuda":
+        idx = device.index if device.index is not None else torch.cuda.current_device()
+        name = torch.cuda.get_device_name(idx)
+        mem_gb = torch.cuda.get_device_properties(idx).total_memory / (1024**3)
+        return f"{device} ({name}, {mem_gb:.1f} GB)"
+    return str(device)
+
+
+DEFAULT_DEVICE = resolve_device()
+
+
+def _configure_torch_for_device(device: torch.device) -> None:
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
+
+
+def _set_random_seeds(random_state: int, device: torch.device) -> None:
+    torch.manual_seed(random_state)
+    np.random.seed(random_state)
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(random_state)
 
 
 class DefaultDataset(Dataset):
@@ -92,15 +143,23 @@ def _train_nn_fold(
     patience = int(params["patience"])
     loss_fn = _build_loss(params["loss_name"])
 
+    use_cuda = device.type == "cuda"
+    loader_kwargs = {
+        "batch_size": batch_size,
+        "pin_memory": use_cuda,
+    }
+    if use_cuda:
+        loader_kwargs["num_workers"] = 0
+
     train_loader = DataLoader(
         DefaultDataset(X_train, y_train),
-        batch_size=batch_size,
         shuffle=True,
+        **loader_kwargs,
     )
     val_loader = DataLoader(
         DefaultDataset(X_val, y_val),
-        batch_size=batch_size,
         shuffle=False,
+        **loader_kwargs,
     )
 
     model = DefaultRegressor(
@@ -169,9 +228,9 @@ def compute_nn_oof_cv(
     device: torch.device | None = None,
     random_state: int = RANDOM_STATE,
 ) -> np.ndarray:
-    device = device or DEFAULT_DEVICE
-    torch.manual_seed(random_state)
-    np.random.seed(random_state)
+    device = resolve_device(device)
+    _configure_torch_for_device(device)
+    _set_random_seeds(random_state, device)
 
     oof = np.zeros(len(y), dtype=float)
     y_values = y.astype(float).to_numpy()
@@ -203,6 +262,9 @@ def compute_nn_oof_cv(
             device,
         )
         oof[val_idx] = _predict_nn(model, X_va_s, device)
+        if device.type == "cuda":
+            del model
+            torch.cuda.empty_cache()
 
     return oof
 
@@ -227,7 +289,8 @@ def make_nn_optuna_objective(
     device: torch.device | None = None,
     random_state: int = RANDOM_STATE,
 ) -> Callable[[optuna.Trial], float]:
-    device = device or DEFAULT_DEVICE
+    device = resolve_device(device)
+    _configure_torch_for_device(device)
 
     def objective(trial: optuna.Trial) -> float:
         h1 = trial.suggest_int("hidden_1", 32, 128, step=16)
