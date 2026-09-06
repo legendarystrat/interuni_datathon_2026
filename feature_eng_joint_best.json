@@ -1,7 +1,7 @@
 {
-  "reference_val_log_loss_mean": 0.4240624150012035,
-  "best_val_log_loss_mean": 0.4229813441788884,
-  "best_val_roc_auc_mean": 0.7890459205229715,
+  "reference_val_log_loss_mean": 0.42426499128341677,
+  "best_val_log_loss_mean": 0.42285420894622805,
+  "best_val_roc_auc_mean": 0.7892743360069654,
   "best_active_blocks": {
     "demographics": true,
     "delay_engineered": true,
@@ -81,12 +81,12 @@
   "best_xgb_params": {
     "n_estimators": 350,
     "max_depth": 5,
-    "learning_rate": 0.01898661236268957,
-    "subsample": 0.7868082902864677,
-    "colsample_bytree": 0.8210052558875973,
-    "reg_lambda": 1.9483028639638904,
-    "reg_alpha": 1.0030905328706748e-06,
-    "min_child_weight": 7
+    "learning_rate": 0.01612701456340557,
+    "subsample": 0.7512774957025544,
+    "colsample_bytree": 0.7723455162185477,
+    "reg_lambda": 3.3311357989371855,
+    "reg_alpha": 2.1745594249438315e-05,
+    "min_child_weight": 3
   },
   "n_features": 49
 }

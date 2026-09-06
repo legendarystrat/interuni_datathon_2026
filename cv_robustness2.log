@@ -1,0 +1,23 @@
+[08:40:49] loading data
+[08:40:49] === seed 42 ===
+[08:40:51]   [1/17] feature_eng_joint_xgboost_trial_saved_feature_eng_joint_best: logloss=0.423537 (2.2s)
+[08:40:53]   [2/17] optuna_extended_xgboost_trial_16_all_engineered_extended: logloss=0.424337 (1.6s)
+[08:40:54]   [3/17] optuna_extended_lightgbm_trial_46_custom_blocks_demographics_delay: logloss=0.424447 (1.0s)
+[08:40:59]   [4/17] optuna_extended_catboost_trial_28_all_engineered_extended: logloss=0.423742 (5.0s)
+[08:41:00]   [5/17] optuna_original_xgboost_trial_25_all_engineered: logloss=0.424757 (1.7s)
+[08:41:01]   [6/17] optuna_original_lightgbm_trial_12_all_engineered: logloss=0.424803 (0.9s)
+[08:41:13]   [7/17] optuna_original_catboost_trial_17_all_engineered: logloss=0.424160 (12.3s)
+[08:41:17]   [8/17] global_search_xgboost_trial_41_exported_feature_eng_best: logloss=0.423824 (3.9s)
+[08:41:21]   [9/17] global_search_xgboost_trial_45_exported_feature_eng_best: logloss=0.423715 (3.7s)
+[08:41:25]   [10/17] global_search_xgboost_trial_42_exported_feature_eng_best: logloss=0.423704 (4.0s)
+[08:41:29]   [11/17] global_search_xgboost_trial_43_exported_feature_eng_best: logloss=0.423775 (4.0s)
+[08:41:33]   [12/17] global_search_xgboost_trial_47_exported_feature_eng_best: logloss=0.423715 (4.0s)
+[08:41:37]   [13/17] global_search_lightgbm_trial_31_all_features: logloss=0.423777 (4.0s)
+[08:41:41]   [14/17] global_search_lightgbm_trial_41_all_features: logloss=0.423782 (4.3s)
+[08:41:45]   [15/17] global_search_lightgbm_trial_44_all_features: logloss=0.423808 (3.3s)
+[08:41:49]   [16/17] global_search_lightgbm_trial_37_all_features: logloss=0.423873 (4.5s)
+[08:41:54]   [17/17] global_search_lightgbm_trial_42_all_features: logloss=0.423878 (4.5s)
+[08:41:54] seed 42: saved_blend=0.422940 equal_blend=0.423141 best_single=0.423537 (feature_eng_joint_xgboost_trial_saved_feature_eng_joint_best)
+[08:41:54] seed 7 already done, skipping
+[08:41:54] seed 123 already done, skipping
+[08:41:54] DONE
