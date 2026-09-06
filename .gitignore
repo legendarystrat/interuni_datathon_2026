@@ -1,4 +1,26 @@
+# Local environments
 .venv/
+
+# Python and notebook caches
 __pycache__/
-*.pyc
+*.py[cod]
 .ipynb_checkpoints/
+
+# Local training/runtime outputs
+artifacts/
+artifacts_file/
+catboost_info/
+*.log
+
+# Local Optuna study databases. Best configs are exported to tracked JSON files.
+*.db
+*.db-journal
+
+# Large reproducible analysis outputs.
+error_analysis_oof.csv
+error_analysis_test_preds.csv
+adversarial_outputs/adversarial_oof.csv
+adversarial_outputs/adversarial_train_weights.csv
+
+# macOS
+.DS_Store

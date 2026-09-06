@@ -1,11 +1,24 @@
 import json
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
 pd.set_option("display.width", 160)
 pd.set_option("display.max_columns", 20)
 
-df = pd.read_csv("error_analysis_oof.csv")
+OOF_PATH = Path("error_analysis_oof.csv")
+TEST_PREDS_PATH = Path("error_analysis_test_preds.csv")
+
+if not OOF_PATH.exists() or not TEST_PREDS_PATH.exists():
+    missing = [str(path) for path in [OOF_PATH, TEST_PREDS_PATH] if not path.exists()]
+    raise FileNotFoundError(
+        "Missing generated error-analysis artifact(s): "
+        + ", ".join(missing)
+        + ". Run `python error_analysis.py` first."
+    )
+
+df = pd.read_csv(OOF_PATH)
 y = df["y_true"]
 p = df["oof_pred"]
 ll = df["row_log_loss"]
@@ -94,7 +107,7 @@ print("\nOverall population same cols:")
 print(df[prof_cols].describe().round(2))
 
 # test set prediction ceiling check
-test_df = pd.read_csv("error_analysis_test_preds.csv")
+test_df = pd.read_csv(TEST_PREDS_PATH)
 print("\n=== TEST SET PREDICTION DISTRIBUTION ===")
 print(test_df["reproduced_pred"].describe().round(4))
 print(f"fraction of test predictions > 0.5: {(test_df['reproduced_pred']>0.5).mean():.4f}")

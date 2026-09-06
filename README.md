@@ -9,13 +9,15 @@ AUC ROC is tracked as a secondary sanity check only.
 
 The strongest local artifact is now:
 
-- Config: `global_search_best.json`
-- Submission: `submission_global_blend.csv`
-- CV log loss: `0.4229845178218504`
-- CV AUC ROC: `0.7898902064728368`
+- Config: `global_search_targeted_best.json`
+- Submission: `submission_global_targeted_blend.csv`
+- CV log loss: `0.42286059146172406`
+- CV AUC ROC: `0.7900760428929055`
 
-This blend combines the saved original/extended winners with fresh XGBoost and
-LightGBM trials from `run_global_search.py`.
+This blend combines the saved original/extended winners with targeted XGBoost
+and LightGBM trials from `run_global_search.py`. The saved calibrated candidate
+is available as `submission_global_targeted_calibrated_blend.csv`, but the raw
+targeted blend had the better validation log loss.
 
 ## Environment
 
@@ -30,7 +32,7 @@ Create and use a repo-local virtual environment:
 ## Useful Commands
 
 Sync the exported feature-engineering best JSON with the best completed Optuna
-trial in `optuna_feature_eng_joint.db`:
+trial after running the feature-engineering Optuna study locally:
 
 ```bash
 .venv/bin/python export_best_feature_eng.py
@@ -62,3 +64,10 @@ saved CatBoost winners:
   --output global_search_best.json \
   --submission submission_global_blend.csv
 ```
+
+## Repository Hygiene
+
+Tracked JSON config files, notebooks, scripts, data files, and selected
+submission CSVs are kept in the repo. Runtime caches, CatBoost output folders,
+Optuna SQLite databases, logs, and bulky regenerated analysis CSVs are ignored.
+Regenerate those local artifacts with the scripts above when needed.

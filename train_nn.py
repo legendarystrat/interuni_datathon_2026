@@ -29,7 +29,7 @@ from model_comparison_lib import (
 
 RANDOM_STATE = 42
 DATA_PATH = "train.csv"
-MODEL_DIR = Path("artifacts_file")
+MODEL_DIR = Path("artifacts") / "nn"
 
 # "auto" | "cuda" | "cuda:0" | "cpu" — or set env NN_DEVICE
 NN_DEVICE = os.environ.get("NN_DEVICE", "auto")
