@@ -1,31 +1,30 @@
 {
   "reference_val_log_loss_mean": 0.4240624150012035,
-  "best_val_log_loss_mean": 0.4236355399818496,
-  "best_val_roc_auc_mean": 0.7891689378576595,
+  "best_val_log_loss_mean": 0.4232287030876286,
+  "best_val_roc_auc_mean": 0.7895951433786396,
   "best_active_blocks": {
     "demographics": true,
     "delay_engineered": false,
     "pay_status": true,
     "pay_amounts": false,
     "bill_amounts": true,
-    "credit_util": true,
+    "credit_util": false,
     "bill_trends": true,
     "models_copy_new_engineered": true,
-    "delay_trends": false,
+    "delay_trends": true,
     "pay_amt_stats": false,
     "payment_change": false,
     "util_stats": true,
-    "delay_util_interactions": true
+    "delay_util_interactions": false
   },
   "best_enabled_blocks": [
     "demographics",
     "pay_status",
     "bill_amounts",
-    "credit_util",
     "bill_trends",
     "models_copy_new_engineered",
-    "util_stats",
-    "delay_util_interactions"
+    "delay_trends",
+    "util_stats"
   ],
   "best_feature_cols": [
     "SEX",
@@ -46,12 +45,6 @@
     "BILL_AMT5",
     "BILL_AMT6",
     "total_bill",
-    "credit_util_1",
-    "credit_util_2",
-    "credit_util_3",
-    "credit_util_4",
-    "credit_util_5",
-    "credit_util_6",
     "bill_slope",
     "bill_abs_change_1_2",
     "bill_pct_change_1_2",
@@ -78,25 +71,26 @@
     "mean_pay_bill_ratio",
     "min_pay_bill_ratio",
     "num_low_pay_ratio",
+    "recent_delay_mean",
+    "old_delay_mean",
+    "delay_deterioration_v2",
+    "weighted_delay_v2",
     "mean_util",
     "max_util",
     "std_util",
     "months_high_util",
     "months_over_limit",
-    "recent_util_vs_avg",
-    "recent_delay_x_util",
-    "delay_count_x_util",
-    "severe_delay_x_util"
+    "recent_util_vs_avg"
   ],
   "best_xgb_params": {
-    "n_estimators": 200,
+    "n_estimators": 450,
     "max_depth": 5,
-    "learning_rate": 0.026829155741040906,
-    "subsample": 0.6428850384816818,
-    "colsample_bytree": 0.7070124199987959,
-    "reg_lambda": 3.737668902893976,
-    "reg_alpha": 0.014806051667405973,
-    "min_child_weight": 5
+    "learning_rate": 0.012848810090718452,
+    "subsample": 0.642226359148273,
+    "colsample_bytree": 0.6141750857260327,
+    "reg_lambda": 6.590179660339618,
+    "reg_alpha": 3.211528472306935e-08,
+    "min_child_weight": 9
   },
-  "n_features": 59
+  "n_features": 54
 }
